@@ -79,16 +79,112 @@ Dutch rental market in 2026 is still landlord-favored. Listings at €1,200–1,
 3. **Income rule**: most landlords require 3.5–4× monthly rent in gross income. For €1,500 rent → €5,250–6,000 gross/mo. If you alone clear that, fine. If not, you'll need a guarantor or savings statement.
 4. **Viewing strategy**: respond within an hour, accept first viewing slot, bring the packet to the viewing. People who decide on the spot win.
 
+## Income verdict (2026-05-10 update)
+
+Your gross: **€5,750/mo ex holiday allowance** → €74,520/yr including 8% vakantiegeld → €6,210/mo equivalent.
+
+| Landlord rule | Max kale rent | Verdict at €1,500 all-in (~€1,300 kale) |
+|---|---|---|
+| 3.5× (incl. vakantiegeld) | €1,774 | ✅ Comfortably qualifies solo |
+| 4× (incl. vakantiegeld) | €1,552 | ✅ Qualifies solo |
+| 4× (base only, strict) | €1,437 | ✅ Still fine for €1,300 kale |
+
+**Bottom line:** you qualify on your own income for the entire shortlist. No guarantor or savings letter needed. Some institutional landlords (Vesteda, Bouwinvest) want a 3× check — even easier.
+
+## Live snapshot (2026-05-10, sanity check on the thesis)
+
+Validating against current market data via web search:
+
+- **Almere city average rent:** €1,615/mo. Cheaper neighborhoods: Stedenwijk avg €1,498, Centrum Almere Buiten avg €1,340 — confirms €1,300 kale is realistic stock there. Real listings in range: e.g. John Coltranestraat (2-bed, 89 m²) €1,185, Poseidonsingel (2-bed, 72 m²) €945. Source: [Rentola Almere overview](https://rentola.nl/huren/almere), [Huurwoningen.nl Almere](https://www.huurwoningen.nl/in/almere/).
+- **Amersfoort:** Pararius shows ~11 active listings, Rentumo 30+. Most cheaper stock concentrates in MVGM (ikwilhuren.nu) and Vesteda — pure aggregators run sparse. Confirmed reference price for an Amersfoort 2026 free-sector flat: Toetsenbordpad €1,550/mo (just above target). Source: [WBA Amersfoort listing](https://www.wba.nl/nl/huurwoning/appartement/amersfoort-toetsenbordpad-5310-1).
+- **Sociale huur 2026 cap:** €932,93/mo (price level 2026, Eemvallei region). Skipped — waiting lists 8+ years.
+- **Anti-bot reality:** Pararius, Funda, Huurwoningen.nl, Vesteda all return 403 to vanilla HTTP fetchers. Scraper must use TLS-impersonation or a real browser; built around `curl_cffi` (chrome120 fingerprint) which gets through Cloudflare without Playwright weight.
+
+Additional sites surfaced that I'd missed before — added to the search list:
+
+- **[Rentumo](https://rentumo.nl/en/rentals/amersfoort)** — aggregator, decent Amersfoort coverage.
+- **[Direct Wonen](https://directwonen.nl)** — long-running NL aggregator.
+- **[ikwilhuren.nu](https://ikwilhuren.nu/aanbod/amersfoort)** — MVGM portal, regulated/middenhuur stock.
+- **[Huurstunt](https://www.huurstunt.nl)** — paid, but has unique listings.
+- **[Rentola](https://rentola.nl)** — paid scraper of other sites; useful as backup.
+- **[Huislijn](https://www.huislijn.nl)** — older NL portal, occasional finds.
+- **[DAK regio Eemvallei](https://www.amersfoort.nl/huren-amersfoort)** — sociale huur (skip).
+
+## Daily scraper (built 2026-05-10)
+
+Code lives in `src/housingbot/`. Pings Telegram for every new listing matching the filters in `config.py`.
+
+### Setup
+
+```powershell
+# from project root
+uv sync
+copy .env.example .env
+# fill TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+```
+
+To get the Telegram credentials:
+1. In Telegram, message `@BotFather` → `/newbot` → follow prompts → grab the TOKEN.
+2. Message your new bot at least once (any text).
+3. Open `https://api.telegram.org/bot<TOKEN>/getUpdates` → grab `chat.id`.
+
+### Run once
+
+```powershell
+uv run python -m housingbot.main
+```
+
+First run pulls every match and marks them seen (no Telegram spam). Subsequent runs only ping new listings.
+
+### Schedule (Windows Task Scheduler)
+
+Run every 30 min during peak listing hours (7:00–22:00):
+
+```powershell
+# Action: Start a program
+# Program/script: pwsh.exe
+# Arguments: -Command "cd C:\path\to\housingMarket; uv run python -m housingbot.main"
+# Trigger: Daily, repeat task every 30 minutes for a duration of 15 hours
+```
+
+Or simpler: a `loop.ps1` you double-click in the morning:
+
+```powershell
+while ($true) {
+  uv run python -m housingbot.main
+  Start-Sleep -Seconds 1800
+}
+```
+
+### Filters
+
+Edit `src/housingbot/config.py` to change cities, price ceiling, or bedroom minimum. Defaults: Amersfoort, Almere, Nijkerk, Leusden, Soest, Weesp; €1,300 kale; ≥1 bedroom.
+
+### Sources covered
+
+- **Pararius** — works via `curl_cffi` chrome120 impersonation.
+- **Funda** — same approach; Funda hardens periodically. If it 403s for >2 days, switch that source to Playwright.
+- **Vesteda** — institutional, regulated rents — most likely to fit budget.
+
+Not yet covered (add later if needed): MVGM (`ikwilhuren.nu`), Bouwinvest, Heimstaden, Rentumo. Each is ~30 LOC following the Pararius template in `sources/pararius.py`.
+
+### Known limits
+
+- Anti-bot detection evolves. If a source starts failing systematically, swap `curl_cffi` for `playwright` in that one module — the rest stays the same.
+- Dedupe is per `(source, listing_id)`. If a listing is removed and re-listed with a new ID, you'll see it twice. Acceptable for this use case.
+- No image fetch, no detail-page enrichment. Title + price + URL only — enough to decide whether to click.
+
 ## Open questions / next actions
 
-- [ ] Confirm your gross monthly income vs the 3.5–4× rule. If borderline, decide on guarantor strategy now.
-- [ ] Decide if WFH days are negotiable — changes Almere math significantly.
-- [ ] Want me to build a **daily scraper** for Pararius/Funda/Vesteda hitting Amersfoort + Almere + Nijkerk under €1,300 kale, 1–2 bed? Cheap to run, would give you a Telegram/email ping on new listings. (Python + scratch script, ~1h.)
-- [ ] Pull current listing snapshot to validate the €1,500 thesis with real data before committing to one town.
+- [ ] Set up the Telegram bot (5 min) and run the scraper once to seed the dedupe DB.
+- [ ] Confirm WFH flexibility — changes Almere math significantly.
+- [ ] Decide whether to also register on `Vesteda`, `Bouwinvest`, `Heimstaden` portals manually (institutional landlords often rank applicants by registration date).
+- [ ] After 3–4 days of scraper data, revisit the shortlist with empirical pricing instead of inferred ranges.
 
 ## Sources / inferences
 
 - Commute times: Google Maps typical rush-hour estimates (own knowledge, verify on the day).
 - Train frequencies: NS intercity schedule, Utrecht–Amersfoort and Amersfoort–Amsterdam corridors.
 - Rent caps and points system: Wet betaalbare huur (in force since July 2024), Rijksoverheid summary linked above.
-- Specific neighborhood price levels (Liendert, Schothorst, etc.): inferred from 2024–2025 Pararius patterns; **needs verification** with a live listing pull.
+- Almere neighborhood pricing and live listings: web search 2026-05-10 (Rentola, Huurwoningen.nl).
+- Sociale huur 2026 cap (€932,93): [Gemeente Amersfoort, Huren in Amersfoort](https://www.amersfoort.nl/huren-amersfoort).
